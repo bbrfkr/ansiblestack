@@ -1,0 +1,99 @@
+---
+- name: install magnum
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-magnum-api
+    - openstack-magnum-conductor
+    - python-magnumclient
+
+  - name: put config file
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    register: reg_magnum_config
+    with_items:
+    - src: magnum.conf.j2
+      dest: /etc/magnum/magnum.conf
+
+  - name: put bug fix file for kubernetes driver
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    with_items:
+# add cluster-admin role to Magnum User
+    - src: kube-apiserver-to-kubelet-role.sh
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/common/templates/kubernetes/fragments/kube-apiserver-to-kubelet-role.sh
+# add kubelet option --cloud-provider=external
+    - src: configure-kubernetes-minion.sh
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/common/templates/kubernetes/fragments/configure-kubernetes-minion.sh
+# add cinder csi plugin manifests script
+    - src: cinder-csi-plugin.yaml
+      dest: /var/www/html/cinder-csi-plugin.yaml
+# add openstack-cloud-controller-manager container config
+    - src: openstack-cloud-controller-manager.json
+      dest: /var/www/html/openstack-cloud-controller-manager.json
+# mod kubemaster.yaml
+    - src: kubemaster.yaml
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/k8s_fedora_atomic_v1/templates/kubemaster.yaml
+# mod kubeminion.yaml
+    - src: kubeminion.yaml
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/k8s_fedora_atomic_v1/templates/kubeminion.yaml
+# mod add subnet_id and external_network_id to write-heat-params-master.yaml 
+    - src: write-heat-params-master.yaml
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/common/templates/kubernetes/fragments/write-heat-params-master.yaml
+# mod add subnet_id and external_network_id to write-heat-params.yaml 
+    - src: write-heat-params.yaml
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/common/templates/kubernetes/fragments/write-heat-params.yaml
+# add enabling and starting openstack-cloud-controller-manager
+    - src: enable-services-master.sh
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/common/templates/kubernetes/fragments/enable-services-master.sh
+
+  - name: put bug fix template for kubernetes driver
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    with_items:
+# add kube-apiserver and kube-controller-manager option --cloud-provider=external
+    - src: configure-kubernetes-master.sh.j2
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/common/templates/kubernetes/fragments/configure-kubernetes-master.sh
+# mod cloud-config file
+    - src: write-kube-os-config.sh.j2
+      dest: /usr/lib/python2.7/site-packages/magnum/drivers/common/templates/kubernetes/fragments/write-kube-os-config.sh
+
+  - name: check magnum database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      magnum
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_magnum'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy magnum database
+    shell: su -s /bin/sh -c "magnum-db-manage upgrade" magnum
+    when: reg_deployed_database is changed
+
+  - name: start and enable magnum
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - openstack-magnum-api
+    - openstack-magnum-conductor
+
+  - name: restart magnum
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_magnum_config is changed
+    with_items:
+    - openstack-magnum-api
+    - openstack-magnum-conductor

@@ -1,0 +1,107 @@
+---
+- name: install neutron controller
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-neutron
+    - openstack-neutron-ml2
+    - openstack-neutron-linuxbridge
+    - ebtables
+    - openstack-neutron-lbaas
+
+  - name: put neutron configs from template
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    register: reg_neutron_template
+    with_items:
+    - src: neutron-controller.conf.j2
+      dest: /etc/neutron/neutron.conf
+    - src: linuxbridge_agent-controller.ini.j2
+      dest: /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+    - src: metadata_agent.ini.j2
+      dest: /etc/neutron/metadata_agent.ini
+    - src: dhcp_agent.ini.j2
+      dest: /etc/neutron/dhcp_agent.ini
+
+  - name: put neutron configs from file
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    register: reg_neutron_file
+    with_items:
+    - src: ml2_conf.ini
+      dest: /etc/neutron/plugins/ml2/ml2_conf.ini
+    - src: l3_agent.ini
+      dest: /etc/neutron/l3_agent.ini
+    - src: neutron_lbaas.conf
+      dest: /etc/neutron/neutron_lbaas.conf
+    - src: lbaas_agent.ini
+      dest: /etc/neutron/lbaas_agent.ini
+
+  - name: put config to load br_netfilter
+    copy:
+      src: br_netfilter.conf
+      dest: /etc/modules-load.d/br_netfilter.conf
+
+  - name: load br_netfilter module
+    modprobe:
+      name: br_netfilter
+      state: present
+
+  - name: create symbolic link plugin.ini
+    file:
+      path: /etc/neutron/plugin.ini
+      src: /etc/neutron/plugins/ml2/ml2_conf.ini
+      state: link
+    register: reg_link_plugin
+
+  - name: check neutron database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      neutron
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_neutron'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy neutron database
+    shell: >
+      su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf
+      --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
+    when: reg_deployed_database is changed
+
+  - name: start and enable neutron controller
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - neutron-server
+    - neutron-linuxbridge-agent
+    - neutron-dhcp-agent
+    - neutron-metadata-agent
+    - neutron-l3-agent
+    - neutron-lbaasv2-agent
+
+  - name: restart neutron controller
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when:
+    - reg_neutron_template is changed or
+      reg_neutron_file is changed or
+      reg_link_plugin is changed
+    with_items:
+    - neutron-server
+    - neutron-linuxbridge-agent
+    - neutron-dhcp-agent
+    - neutron-metadata-agent
+    - neutron-l3-agent
+    - neutron-lbaasv2-agent

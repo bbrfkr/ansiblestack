@@ -1,0 +1,46 @@
+---
+- name: install nova compute
+  hosts: computes
+  tasks:
+  - name: install packages
+    yum:
+      name: openstack-nova-compute
+      state: installed
+
+  - name: put nova.conf
+    template:
+      src: nova-compute.conf.j2
+      dest: /etc/nova/nova.conf
+    register: reg_nova_config
+
+  - name: start and enable nova compute
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - libvirtd
+    - openstack-nova-compute
+
+  - name: restart nova compute
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_nova_config is changed
+    with_items:
+    - openstack-nova-compute
+
+  - block:
+    - name: get compute hosts of cell
+      shell: su -s /bin/sh -c "nova-manage cell_v2 list_hosts" nova
+      changed_when: false
+      failed_when: false
+      run_once: yes
+      register: reg_compute_host
+
+    - name: discover compute hosts
+      shell: su -s /bin/sh -c "nova-manage cell_v2 discover_hosts --verbose" nova
+      run_once: yes
+      when: not (reg_compute_host.stdout is search(hostvars[item]['ansible_nodename']))
+      with_items: "{{ groups['computes'] }}"
+    delegate_to: "{{ groups['controllers'][0] }}"

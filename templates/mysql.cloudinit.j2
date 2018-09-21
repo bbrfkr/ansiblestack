@@ -1,0 +1,52 @@
+#!/bin/bash
+#####
+# mysql trove guestagent cloud init script
+# follow this procedure to create image with ubuntu1804
+# 1. set noninteractive install mode for apt
+#   # sudo su -
+#   # export DEBIAN_FRONTEND=noninteractive
+# 2. register rocky repo
+#   # add-apt-repository -y cloud-archive:rocky
+#   # apt update -y
+# 3. install trove-guestagent and mysql
+#   # apt install -y trove-guestagent
+#   # apt install -y mysql-server-5.7
+# 4. exec workaround to run trove-guestagent
+#   # mysql -uroot -e "create user 'root'@'127.0.0.1'"
+#   # mysql -uroot -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION"
+#   # mysql -uroot -e "GRANT PROXY ON ''@'' TO 'root'@'127.0.0.1' WITH GRANT OPTION"
+#   # sed -i 's@/etc/init/%s.conf@/etc/init/%s.conf.disabled@;s@/etc/init.d/%s@/etc/init.d/%s.disabled@' \
+#     /usr/lib/python2.7/dist-packages/trove/guestagent/common/operating_system.py
+#   # sed -i 's@.*/etc/mysql/mysql.conf.d/.*@@g' /etc/mysql/my.cnf
+#   # sed -i '1s/^/[mysqld]\n/' /etc/mysql/my.cnf
+#   # echo "skip-name-resolve" >> /etc/mysql/my.cnf
+#####
+
+# permit password auth of ubuntu
+sed -i 's/#PasswordAuthentication.*/PasswordAuthentication/g' /etc/ssh/sshd_config
+sed -i 's/PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+echo "ubuntu:trove" | chpasswd
+systemctl restart ssh
+
+# add trove use to sudoers
+echo "trove    ALL=(ALL:ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# config trove-guestagent
+cat << EOF > /etc/trove/trove-guestagent.conf
+[DEFAULT]
+rabbit_host = {{ ansible_nodename }}
+rabbit_userid = openstack
+rabbit_password = {{ openstack.rabbitmq.user_pass }}
+nova_proxy_admin_user = nova
+nova_proxy_admin_pass = {{ openstack.nova.user_pass }}
+nova_proxy_admin_tenant_name = service
+trove_auth_url = http://{{ ansible_nodename }}:5000/v3
+control_exchange = trove
+datastore_manager = mysql
+log_dir = /var/log/trove
+log_file = trove-guestagent.log
+EOF
+
+# restart trove-guestagent
+systemctl restart trove-guestagent
+

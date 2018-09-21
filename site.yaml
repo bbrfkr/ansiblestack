@@ -1,0 +1,25 @@
+---
+#- import_playbook: common_setting.yaml
+#- import_playbook: storage_setting.yaml
+#- import_playbook: install_mariadb.yaml
+#- import_playbook: install_rabbitmq.yaml
+#- import_playbook: install_memcached.yaml
+#- import_playbook: create_database.yaml
+#- import_playbook: install_keystone.yaml
+#- import_playbook: create_service.yaml
+#- import_playbook: install_swift.yaml
+#- import_playbook: install_glance.yaml
+#- import_playbook: install_nova_controller.yaml
+#- import_playbook: install_nova_compute.yaml
+#- import_playbook: install_neutron_controller.yaml
+#- import_playbook: install_neutron_compute.yaml
+#- import_playbook: configure_nfs.yaml
+#- import_playbook: install_cinder.yaml
+#- import_playbook: install_heat.yaml
+#- import_playbook: install_designate.yaml
+#- import_playbook: install_manila.yaml
+#- import_playbook: install_trove.yaml
+#- import_playbook: install_barbican.yaml
+- import_playbook: install_magnum.yaml
+#- import_playbook: install_horizon.yaml
+

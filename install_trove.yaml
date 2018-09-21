@@ -1,0 +1,79 @@
+---
+- name: install trove
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-trove
+    - python-troveclient
+
+  - name: put cloudinit dir
+    file:
+      path: /etc/trove/cloudinit
+      owner: trove
+      group: trove
+      state: directory
+
+  - name: get service project id
+    os_project_facts:
+      name: service
+    connection: local
+    environment: "{{ openstack.openrc.admin }}"
+
+  - name: set service project id
+    set_fact:
+      service_project_id: "{{ openstack_projects.0.id }}"
+
+  - name: put config file
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    register: reg_trove_config
+    with_items:
+    - src: trove.conf.j2
+      dest: /etc/trove/trove.conf
+    - src: trove-taskmanager.conf.j2
+      dest: /etc/trove/trove-taskmanager.conf
+    - src: trove-conductor.conf.j2
+      dest: /etc/trove/trove-conductor.conf
+    - src: mysql.cloudinit.j2
+      dest: /etc/trove/cloudinit/mysql.cloudinit
+
+  - name: check trove database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      trove
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_trove'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy trove database
+    shell: su -s /bin/sh -c "trove-manage db_sync" trove
+    when: reg_deployed_database is changed
+
+  - name: start and enable trove
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - openstack-trove-api
+    - openstack-trove-taskmanager
+    - openstack-trove-conductor
+
+  - name: restart trove
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_trove_config is changed
+    with_items:
+    - openstack-trove-api
+    - openstack-trove-taskmanager
+    - openstack-trove-conductor
+

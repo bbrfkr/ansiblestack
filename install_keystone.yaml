@@ -1,0 +1,105 @@
+---
+- name: install keystone
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-keystone
+    - httpd
+    - mod_wsgi
+
+  - name: put config of keystone
+    template:
+      src: keystone.conf.j2
+      dest: /etc/keystone/keystone.conf
+
+  - name: check keystone database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      keystone
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_keystone'))
+    failed_when: false
+    register: reg_deployed_database
+  
+  - name: deploy keystone database
+    shell: su -s /bin/sh -c "keystone-manage db_sync" keystone
+    when: reg_deployed_database is changed
+  
+  - name: initialize fernet key repository
+    shell: keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+    args:
+      creates: /etc/keystone/fernet-keys
+  
+  - name: initialize fernet key repository
+    shell: keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+    args:
+      creates: /etc/keystone/credential-keys
+
+  - name: check admin project is created
+    shell: openstack project list
+    changed_when: not (reg_project_list.stdout is search('admin'))
+    failed_when: false
+    register: reg_project_list
+    environment: "{{ openstack.openrc.admin }}"
+  
+  - name: bootstrap keystone
+    shell: >
+      keystone-manage bootstrap
+      --bootstrap-password {{ openstack.openrc.admin.OS_PASSWORD }}
+      --bootstrap-username admin
+      --bootstrap-project-name admin
+      --bootstrap-role-name admin
+      --bootstrap-service-name keystone
+      --bootstrap-region-id {{ openstack.openrc.admin.OS_REGION_NAME }}
+      --bootstrap-admin-url http://{{ ansible_nodename }}:5000/v3/
+      --bootstrap-public-url http://{{ ansible_nodename }}:5000/v3/
+      --bootstrap-internal-url http://{{ ansible_nodename }}:5000/v3/
+    when: reg_project_list is changed
+
+  - name: set httpd config
+    template:
+      src: httpd.conf.j2
+      dest: /etc/httpd/conf/httpd.conf
+    register: reg_config_httpd
+  
+  - name: create symbolic link wsgi-keystone.conf
+    file:
+      path: /etc/httpd/conf.d/wsgi-keystone.conf
+      src: /usr/share/keystone/wsgi-keystone.conf
+      state: link
+    register: reg_link_wsgi
+  
+  - name: start and enable httpd
+    service:
+      name: httpd
+      state: started
+      enabled: yes
+  
+  - name: restart httpd
+    service:
+      name: httpd
+      state: restarted
+    when:
+    - reg_config_httpd is changed or
+      reg_link_wsgi is changed
+
+  - block:
+    - name: create service project
+      os_project:
+        name: service
+        description: "Service Project"
+        domain_id: default
+        state: present
+  
+    - name: create user role
+      os_keystone_role:
+        name: user 
+        state: present
+    connection: local
+    environment: "{{ openstack.openrc.admin }}"

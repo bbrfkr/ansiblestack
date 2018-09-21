@@ -1,0 +1,45 @@
+---
+- name: install barbican 
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-barbican-api
+
+  - name: put config file
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    register: reg_barbican_config
+    with_items:
+    - src: barbican.conf.j2
+      dest: /etc/barbican/barbican.conf
+    - src: wsgi-barbican.conf.j2
+      dest: /etc/httpd/conf.d/wsgi-barbican.conf
+
+  - name: check barbican database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      barbican
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_barbican'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy barbican database
+    shell: su -s /bin/sh -c "barbican-manage db upgrade" barbican
+    when: reg_deployed_database is changed
+
+  - name: restart httpd and memcached
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_barbican_config is changed
+    with_items:
+    - httpd
+    - memcached

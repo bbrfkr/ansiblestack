@@ -1,0 +1,45 @@
+---
+- name: configure nfs for cinder
+  hosts: all 
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - nfs-utils
+
+  - name: change mode of cinder nfs export point
+    file:
+      path: /exports/cinder
+      owner: nfsnobody
+      group: nfsnobody
+
+  - name: put exports
+    template:
+      src: exports-controller.j2
+      dest: /etc/exports
+    register: reg_put_exports
+    when: inventory_hostname in groups['controllers']
+
+  - name: put exports
+    template:
+      src: exports-compute.j2
+      dest: /etc/exports
+    register: reg_put_exports
+    when: inventory_hostname in groups['computes']
+
+  - name: start and enable nfs server
+    service:
+      name: nfs-server
+      state: started
+      enabled: yes
+
+  - name: restart nfs server
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_put_exports is changed
+    with_items:
+    - rpcbind
+    - nfs-server

@@ -1,0 +1,30 @@
+---
+- name: install memcached
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - memcached
+    - python-memcached
+  
+  - name: set memcached listen address
+    lineinfile:
+      dest: /etc/sysconfig/memcached
+      line: OPTIONS="-l 127.0.0.1,::1,{{ ansible_default_ipv4.address }}"
+      regexp: ^#?OPTIONS=".*"
+    register: reg_config_memcached
+  
+  - name: start and enable memcached
+    service:
+      name: memcached
+      state: started
+      enabled: yes
+
+  - name: restart memcached
+    service:
+      name: memcached
+      state: restarted
+    when: reg_config_memcached is changed

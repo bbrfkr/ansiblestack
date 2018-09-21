@@ -1,0 +1,50 @@
+# /etc/rsyncd: configuration file for rsync daemon mode
+
+# See rsyncd.conf man page for more options.
+
+# configuration example:
+
+# uid = nobody
+# gid = nobody
+# use chroot = yes
+# max connections = 4
+# pid file = /var/run/rsyncd.pid
+# exclude = lost+found/
+# transfer logging = yes
+# timeout = 900
+# ignore nonreadable = yes
+# dont compress   = *.gz *.tgz *.zip *.z *.Z *.rpm *.deb *.bz2
+
+# [ftp]
+#        path = /home/ftp
+#        comment = ftp export area
+
+uid = root
+gid = root
+log file = /var/log/rsyncd.log
+pid file = /var/run/rsyncd.pid
+address = {{ ansible_eth2.ipv4.address }}
+
+[account]
+max connections = 2
+path = /var/lib/swift/devs/
+read only = False
+lock file = /var/lock/account.lock
+
+[container]
+max connections = 2
+path = /var/lib/swift/devs/
+read only = False
+lock file = /var/lock/container.lock
+
+[object]
+max connections = 2
+path = /var/lib/swift/devs/
+read only = False
+lock file = /var/lock/object.lock
+
+[etc-swift]
+path = /etc/swift/
+read only = False
+auth users = {{ openstack.rsync.sync_user }} 
+secrets file = /etc/rsyncd.secrets

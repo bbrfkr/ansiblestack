@@ -1,0 +1,104 @@
+---
+- name: install nova controller
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-nova-api
+    - openstack-nova-conductor
+    - openstack-nova-console
+    - openstack-nova-novncproxy
+    - openstack-nova-scheduler
+    - openstack-nova-placement-api
+
+  - name: put nova.conf
+    template:
+      src: nova-controller.conf.j2
+      dest: /etc/nova/nova.conf
+    register: reg_nova_config
+
+  - name: put httpd's config of bug fix for placement api
+    copy:
+      src: 00-nova-placement-api.conf
+      dest: /etc/httpd/conf.d/00-nova-placement-api.conf
+    register: reg_placement_config
+
+  - name: restart httpd
+    service:
+      name: httpd
+      state: restarted
+    when: reg_placement_config is changed
+
+  - name: check nova_api database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      {{ item }}
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_' + item))
+    failed_when: false
+    register: reg_deployed_database
+    with_items:
+    - nova_api
+    - placement
+
+  - name: deploy nova_api database
+    shell: su -s /bin/sh -c "nova-manage api_db sync" nova
+    when: reg_deployed_database is changed
+
+  - name: check cell0 is created
+    shell: nova-manage cell_v2 list_cells
+    changed_when: false
+    failed_when: false
+    register: reg_created_cell
+
+  - name: create cell0
+    shell: su -s /bin/sh -c "nova-manage cell_v2 map_cell0" nova
+    when: not (reg_created_cell.stdout is search('cell0'))
+
+  - name: create cell1
+    shell: su -s /bin/sh -c "nova-manage cell_v2 create_cell --name=cell1 --verbose" nova
+    when: not (reg_created_cell.stdout is search('cell1'))
+
+  - name: check nova database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      nova
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_nova'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy nova database
+    shell: su -s /bin/sh -c "nova-manage db sync" nova
+    when: reg_deployed_database is changed
+
+  - name: start and enable nova controller
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - openstack-nova-api
+    - openstack-nova-consoleauth
+    - openstack-nova-scheduler
+    - openstack-nova-conductor
+    - openstack-nova-novncproxy.service
+
+  - name: restart nova controller
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_nova_config is changed
+    with_items:
+    - openstack-nova-api
+    - openstack-nova-consoleauth
+    - openstack-nova-scheduler
+    - openstack-nova-conductor
+    - openstack-nova-novncproxy.service

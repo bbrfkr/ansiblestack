@@ -1,0 +1,3 @@
+{% for nfs_server in groups['computes'] %}
+{{ hostvars[nfs_server]['ansible_eth2']['ipv4']['address'] }}:/exports/cinder
+{% endfor %}

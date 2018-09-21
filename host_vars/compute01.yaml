@@ -1,0 +1,12 @@
+---
+ansible_host: compute01.example.com
+ansible_user: root
+ansible_ssh_pass: password
+ansible_port: 22
+filesystems:
+- fstype: xfs
+  dev: /dev/mapper/cinder-data
+  mount_point: /exports/cinder
+- fstype: xfs
+  dev: /dev/vdb
+  mount_point: /swift/devs/vdb

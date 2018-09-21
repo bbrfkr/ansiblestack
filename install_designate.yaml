@@ -1,0 +1,132 @@
+---
+- name: install designate
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - bind
+    - bind-utils
+    - openstack-designate-agent
+    - openstack-designate-api
+    - openstack-designate-central
+    - openstack-designate-common
+    - openstack-designate-mdns
+    - openstack-designate-pool-manager
+    - openstack-designate-producer
+    - openstack-designate-sink
+    - openstack-designate-worker
+    - openstack-designate-zone-manager
+
+  - name: put bind config
+    copy:
+      src: named.conf
+      dest: /etc/named.conf
+    register: reg_bind_config
+
+  - name: set ownership and permission named data dir 
+    file:
+      path: /var/named 
+      mode: 0770
+
+  - name: generate rndc key
+    shell: rndc-confgen -a -k designate -c /etc/designate/rndc.key -r /dev/urandom
+    args:
+      creates: /etc/designate/rndc.key
+    register: reg_rndc_key 
+
+  - name: set ownership and permission rndc key
+    file:
+      path: /etc/designate/rndc.key
+      owner: designate
+      group: named
+      mode: 0440
+
+  - name: start and enable bind
+    service:
+      name: named
+      state: started
+      enabled: yes
+
+  - name: restart bind
+    service:
+      name: named
+      state: restarted
+    when: reg_bind_config is changed
+
+  - name: put designate config
+    template:
+      src: designate.conf.j2
+      dest: /etc/designate/designate.conf
+    register: reg_designate_config
+
+  - name: put pool definition
+    template:
+      src: pools.yaml.j2
+      dest: /etc/designate/pools.yaml
+    register: reg_pool_def
+
+  - name: check designate database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      designate
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_designate'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy designate database
+    shell: su -s /bin/sh -c "designate-manage database sync" designate
+    when: reg_deployed_database is changed
+
+  - name: start and enable designate partially
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - designate-central
+    - designate-api
+
+  - name: restart designate partially
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: 
+    - reg_designate_config is changed or
+      reg_rndc_key is changed or
+      reg_pool_def is changed
+    with_items:
+    - designate-central
+    - designate-api
+
+  - name: update designate pools
+    shell: su -s /bin/sh -c "designate-manage pool update" designate
+    when: reg_deployed_database is changed
+
+  - name: start and enable designate completely
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - designate-worker
+    - designate-producer
+    - designate-mdns 
+
+  - name: restart designate completely
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: 
+    - reg_designate_config is changed or
+      reg_rndc_key is changed or
+      reg_pool_def is changed
+    with_items:
+    - designate-worker
+    - designate-producer
+    - designate-mdns 

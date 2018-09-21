@@ -1,0 +1,108 @@
+---
+- name: install horizon
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-dashboard
+    - openstack-neutron-lbaas-ui
+    - openstack-heat-ui
+    - openstack-designate-ui
+    - openstack-trove-ui
+    - openstack-magnum-ui
+
+  - name: put horizon config from template
+    template:
+      src: local_settings.j2
+      dest: /etc/openstack-dashboard/local_settings
+    register: reg_horizon_template
+
+  - name: put horizon config from file
+    copy:
+      src: openstack-dashboard.conf
+      dest: /etc/httpd/conf.d/openstack-dashboard.conf
+    register: reg_horizon_file
+
+  - name: install git
+    yum:
+      name: git
+      state: installed
+
+  - name: check manila-dashboard
+    shell: test -e /usr/share/openstack-dashboard/openstack_dashboard/local/{{ item }}
+    changed_when: reg_manila_ui.rc != 0
+    failed_when: false
+    register: reg_manila_ui
+    with_items:
+    - local_settings.d/_90_manila_shares.py
+    - enabled/_80_manila_admin_add_share_panel_group.py
+    - enabled/_80_manila_project_add_share_panel_group.py
+    - enabled/_9010_manila_admin_add_shares_panel_to_share_panel_group.py
+    - enabled/_9010_manila_project_add_shares_panel_to_share_panel_group.py
+    - enabled/_9020_manila_admin_add_share_snapshots_panel_to_share_panel_group.py
+    - enabled/_9020_manila_project_add_share_snapshots_panel_to_share_panel_group.py
+    - enabled/_9030_manila_admin_add_share_types_panel_to_share_panel_group.py
+    - enabled/_9040_manila_admin_add_share_networks_panel_to_share_panel_group.py
+    - enabled/_9040_manila_project_add_share_networks_panel_to_share_panel_group.py
+    - enabled/_9050_manila_admin_add_security_services_panel_to_share_panel_group.py
+    - enabled/_9050_manila_project_add_security_services_panel_to_share_panel_group.py
+    - enabled/_9060_manila_admin_add_share_servers_panel_to_share_panel_group.py
+    - enabled/_9070_manila_admin_add_share_instances_panel_to_share_panel_group.py
+    - enabled/_9080_manila_admin_add_share_groups_panel_to_share_panel_group.py
+    - enabled/_9080_manila_project_add_share_groups_panel_to_share_panel_group.py
+    - enabled/_9085_manila_admin_add_share_group_snapshots_panel_to_share_panel_group.py
+    - enabled/_9085_manila_project_add_share_group_snapshots_panel_to_share_panel_group.py
+    - enabled/_9090_manila_admin_add_share_group_types_panel_to_share_panel_group.py
+
+  - block:
+    - name: get manila-ui source code
+      git:
+        repo: https://github.com/openstack/manila-ui
+        dest: /tmp/manila-ui
+        version: remotes/origin/stable/rocky
+
+    - name: exec manila-ui setup
+      shell: python setup.py install
+      args:
+        chdir: /tmp/manila-ui
+
+    - name: copy python code to enable manila-ui
+      copy:
+        src: "/usr/lib/python2.7/site-packages/manila_ui/local/{{ item }}"
+        dest: "/usr/share/openstack-dashboard/openstack_dashboard/local/{{ item }}"
+        remote_src: yes
+      with_items:
+      - local_settings.d/_90_manila_shares.py
+      - enabled/_80_manila_admin_add_share_panel_group.py
+      - enabled/_80_manila_project_add_share_panel_group.py
+      - enabled/_9010_manila_admin_add_shares_panel_to_share_panel_group.py
+      - enabled/_9010_manila_project_add_shares_panel_to_share_panel_group.py
+      - enabled/_9020_manila_admin_add_share_snapshots_panel_to_share_panel_group.py
+      - enabled/_9020_manila_project_add_share_snapshots_panel_to_share_panel_group.py
+      - enabled/_9030_manila_admin_add_share_types_panel_to_share_panel_group.py
+      - enabled/_9040_manila_admin_add_share_networks_panel_to_share_panel_group.py
+      - enabled/_9040_manila_project_add_share_networks_panel_to_share_panel_group.py
+      - enabled/_9050_manila_admin_add_security_services_panel_to_share_panel_group.py
+      - enabled/_9050_manila_project_add_security_services_panel_to_share_panel_group.py
+      - enabled/_9060_manila_admin_add_share_servers_panel_to_share_panel_group.py
+      - enabled/_9070_manila_admin_add_share_instances_panel_to_share_panel_group.py
+      - enabled/_9080_manila_admin_add_share_groups_panel_to_share_panel_group.py
+      - enabled/_9080_manila_project_add_share_groups_panel_to_share_panel_group.py
+      - enabled/_9085_manila_admin_add_share_group_snapshots_panel_to_share_panel_group.py
+      - enabled/_9085_manila_project_add_share_group_snapshots_panel_to_share_panel_group.py
+      - enabled/_9090_manila_admin_add_share_group_types_panel_to_share_panel_group.py
+    when: reg_manila_ui is changed
+
+  - name: restart httpd and memcached
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when:
+    - reg_horizon_template is changed or
+      reg_horizon_file is changed 
+    with_items:
+    - httpd
+    - memcached

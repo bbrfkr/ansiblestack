@@ -1,0 +1,100 @@
+[DEFAULT]
+log_dir = /var/log/trove
+trove_auth_url = http://{{ ansible_nodename }}:5000/v3
+nova_compute_url = http://{{ ansible_nodename }}:8774/v2.1
+cinder_url = http://{{ ansible_nodename }}:8776/v3
+swift_url = http://{{ ansible_nodename }}:8080/v1/AUTH_
+rpc_backend = rabbit
+
+debug = True
+#trove_auth_url = http://0.0.0.0/identity/v2.0
+
+# The manager class to use for conductor. (string value)
+conductor_manager = trove.conductor.manager.Manager
+
+#===================== RPC Configuration =================================
+
+# URL representing the messaging driver to use and its full configuration.
+# If not set, we fall back to the 'rpc_backend' option and driver specific
+# configuration.
+#transport_url=<None>
+
+# The messaging driver to use. Options include rabbit, qpid and zmq.
+# Default is rabbit. (string value)
+#rpc_backend=rabbit
+
+# The default exchange under which topics are scoped. May be
+# overridden by an exchange name specified in the 'transport_url option.
+control_exchange = trove
+
+[profiler]
+# If False fully disable profiling feature.
+#enabled = False
+# If False doesn't trace SQL requests.
+#trace_sqlalchemy = True
+
+[database]
+connection = mysql+pymysql://trove:{{ openstack.trove.db_pass }}@{{ ansible_nodename }}/trove
+
+#connection = mysql+pymysql://root:e1a2c042c828d3566d0a@localhost/trove
+
+[oslo_messaging_notifications]
+
+#
+# From oslo.messaging
+#
+
+# The Driver(s) to handle sending notifications. Possible
+# values are messaging, messagingv2, routing, log, test, noop
+# (multi valued)
+# Deprecated group/name - [DEFAULT]/notification_driver
+#driver =
+
+# A URL representing the messaging driver to use for
+# notifications. If not set, we fall back to the same
+# configuration used for RPC. (string value)
+# Deprecated group/name - [DEFAULT]/notification_transport_url
+#transport_url = <None>
+
+# AMQP topic used for OpenStack notifications. (list value)
+# Deprecated group/name - [rpc_notifier2]/topics
+# Deprecated group/name - [DEFAULT]/notification_topics
+#topics = notifications
+
+# The maximum number of attempts to re-send a notification
+# message which failed to be delivered due to a recoverable
+# error. 0 - No retry, -1 - indefinite (integer value)
+#retry = -1
+
+[oslo_messaging_rabbit]
+rabbit_host = {{ ansible_nodename }}
+rabbit_userid = openstack
+rabbit_password = {{ openstack.rabbitmq.user_pass }}
+
+# The RabbitMQ broker address where a single node is used. (string value)
+# Deprecated group/name - [DEFAULT]/rabbit_host
+#rabbit_host=localhost
+
+# The RabbitMQ broker port where a single node is used. (integer value)
+# Deprecated group/name - [DEFAULT]/rabbit_port
+#rabbit_port=5672
+
+# RabbitMQ HA cluster host:port pairs. (list value)
+# Deprecated group/name - [DEFAULT]/rabbit_hosts
+#rabbit_hosts=$rabbit_host:$rabbit_port
+
+# Connect over SSL for RabbitMQ. (boolean value)
+# Deprecated group/name - [DEFAULT]/rabbit_use_ssl
+#rabbit_use_ssl=false
+
+# The RabbitMQ userid. (string value)
+# Deprecated group/name - [DEFAULT]/rabbit_userid
+#rabbit_userid=guest
+
+# The RabbitMQ password. (string value)
+# Deprecated group/name - [DEFAULT]/rabbit_password
+#rabbit_password=f7999d1955c5014aa32c
+
+# The RabbitMQ virtual host. (string value)
+# Deprecated group/name - [DEFAULT]/rabbit_virtual_host
+#rabbit_virtual_host=/

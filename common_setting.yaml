@@ -1,0 +1,196 @@
+---
+- name: common settings of openstack
+  hosts: all
+  tasks:
+  - name: disable and stop NetworkManager
+    service:
+      name: "{{ item }}"
+      state: stopped
+      enabled: no
+    with_items:
+    - NetworkManager
+
+  - name: enable and start firewalld
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - firewalld
+
+  - name: disable selinux
+    selinux:
+      policy: targeted
+      state: permissive
+      
+  - name: set zone to interface
+    firewalld:
+      zone: "{{ item.zone }}"
+      interface: "{{ item.if }}"
+      permanent: yes
+      immediate: yes
+      state: enabled
+    with_items:
+    - if: eth0
+      zone: public
+    - if: eth1
+      zone: trusted
+    - if: eth2
+      zone: trusted
+    - if: eth3
+      zone: trusted
+
+  - name: open ports of mgmt interface for controller
+    firewalld:
+      zone: public
+      port: "{{ item }}"
+      immediate: yes
+      permanent: yes
+      state: enabled
+    when: inventory_hostname in groups['controllers']
+    with_items:
+# dns 
+    - 53/udp
+# ntp
+    - 123/udp
+# mariadb
+    - 3306/tcp
+# rabbitmq
+    - 5672/tcp
+# memcached
+    - 11211/tcp
+# keystone
+    - 5000/tcp
+# swift
+    - 8080/tcp
+# glance
+    - 9292/tcp
+    - 9191/tcp
+# nova
+    - 8773-8775/tcp
+    - 6080-6082/tcp
+# placement
+    - 8778/tcp
+# neutron
+    - 9696/tcp
+# horizon
+    - 80/tcp
+# cinder
+    - 8776/tcp
+# heat
+    - 8000/tcp
+    - 8003-8004/tcp
+# designate
+    - 9001/tcp
+# manila
+    - 8786/tcp
+# trove
+    - 8779/tcp
+# barbican 
+    - 9311/tcp
+# magnum
+    - 9511/tcp
+
+  - name: open ports of mgmt interface for compute 
+    firewalld:
+      zone: public
+      port: "{{ item }}"
+      immediate: yes
+      permanent: yes
+      state: enabled
+    when: inventory_hostname in groups['computes']
+    with_items:
+# nova
+    - 5900-5999/tcp
+
+  - name: put hosts
+    template:
+      src: hosts.j2
+      dest: /etc/hosts
+
+  - name: install chrony
+    yum:
+      name: chrony
+      state: installed
+
+  - name: put config of chrony for controller
+    template:
+      src: chrony-controller.conf.j2
+      dest: /etc/chrony.conf
+    register: reg_controller_chrony_config
+    when: inventory_hostname in groups['controllers']
+
+  - name: put config of chrony for others
+    template:
+      src: chrony-other.conf.j2
+      dest: /etc/chrony.conf
+    register: reg_other_chrony_config
+    when: not (inventory_hostname in groups['controllers'])
+    
+  - name: start and enable chronyd
+    service:
+      name: chronyd
+      state: started
+      enabled: yes
+
+  - name: restart chronyd
+    service:
+      name: chronyd
+      state: restarted
+    when:
+    - reg_controller_chrony_config is changed or
+      reg_other_chrony_config is changed
+
+  - block:
+    - name: check no updatable packages are found
+      shell: LANG=C yum update --assumeno
+      changed_when: not (reg_yum_update.stdout is search("No packages marked for update"))
+      failed_when: false
+      register: reg_yum_update
+
+    - block:
+      - name: execute yum update
+        yum:
+          name: "*"
+          state: latest
+
+      - name: reboot target
+        shell: sleep 2 && reboot
+        async: 1
+        poll: 0
+      
+      - name: wait for ssh close
+        wait_for:
+          host: "{{ ansible_host | default(ansible_ssh_host | default(inventory_hostname)) }}"
+          port: "{{ ansible_port | default('22') }}"
+          search_regex: OpenSSH
+          state: stopped
+        connection: local
+      
+      - name: wait for ssh open
+        wait_for:
+          host: "{{ ansible_host | default(ansible_ssh_host | default(inventory_hostname)) }}"
+          port: "{{ ansible_port | default('22') }}"
+          search_regex: OpenSSH
+          state: started
+        connection: local
+      when: reg_yum_update is changed
+    when: openstack.exec_yum_update
+
+  - name: enable openstack repository
+    yum:
+      name: centos-release-openstack-rocky
+      state: installed
+
+  - name: install openstack client and openstack selinux packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - python-openstackclient
+    - openstack-selinux
+
+  - name: set utf-8 as default encoding of python
+    copy:
+      src: sitecustomize.py
+      dest: /usr/lib/python2.7/site-packages/sitecustomize.py

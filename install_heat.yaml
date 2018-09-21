@@ -1,0 +1,54 @@
+---
+- name: install heat
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-heat-api
+    - openstack-heat-api-cfn
+    - openstack-heat-engine
+
+  - name: put heat config
+    template:
+      src: heat.conf.j2
+      dest: /etc/heat/heat.conf
+    register: reg_heat_config
+
+  - name: check heat database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      heat
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_heat'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy heat database
+    shell: su -s /bin/sh -c "heat-manage db_sync" heat
+    when: reg_deployed_database is changed
+
+  - name: start and enable heat
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - openstack-heat-api
+    - openstack-heat-api-cfn
+    - openstack-heat-engine
+
+  - name: restart heat
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_heat_config is changed
+    with_items:
+    - openstack-heat-api
+    - openstack-heat-api-cfn
+    - openstack-heat-engine
+

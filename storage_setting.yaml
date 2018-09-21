@@ -1,0 +1,52 @@
+---
+- name: storage settings
+  hosts: all 
+  tasks:
+  - name: create partition for data
+    parted:
+      device: "{{ item }}"
+      number: 1
+      flags:
+      - lvm
+      state: present
+    with_items:
+    - /dev/vda
+
+  - name: create volume group for data
+    lvg:
+      vg: "{{ item.vg }}"
+      pvs: "{{ item.pvs }}"
+      state: present
+    with_items:
+    - { vg: cinder, pvs: "/dev/vda1" }
+
+  - name: create logical volume for data
+    lvol:
+      lv: "{{ item.lv }}"
+      vg: "{{ item.vg }}"
+      size: "{{ item.size }}"
+      state: present
+    with_items:
+    - { lv: data, vg: cinder, size: 98%VG }
+
+  - name: format logical volume
+    filesystem:
+      fstype: "{{ item.fstype }}"
+      dev: "{{ item.dev }}"
+    with_items: "{{ filesystems }}"
+
+  - name: create mount point
+    file:
+      path: "{{ item.mount_point }}"
+      state: directory
+    when: item.mount_point is defined
+    with_items: "{{ filesystems }}"
+
+  - name: mount all filesystems of fstab
+    mount:
+      path: "{{ item.mount_point }}"
+      src: "{{ item.dev }}"
+      fstype: "{{ item.fstype }}"
+      state: mounted
+    when: item.mount_point is defined
+    with_items: "{{ filesystems }}"

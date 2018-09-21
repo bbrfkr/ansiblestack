@@ -1,0 +1,73 @@
+---
+- name: install manila
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-manila
+    - python-manilaclient 
+    - openstack-manila-share
+    - python2-PyMySQL
+
+  - name: put manila config
+    template:
+      src: manila.conf.j2
+      dest: /etc/manila/manila.conf
+    register: reg_manila_conf
+
+  - name: create lock dir
+    file:
+      path: /var/lock/manila
+      owner: manila
+      group: manila
+      state: directory
+
+  - name: check manila database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      manila
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_manila'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy manila database
+    shell: su -s /bin/sh -c "manila-manage db sync" manila
+    when: reg_deployed_database is changed
+
+  - name: start and enable manila controller
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - openstack-manila-api
+    - openstack-manila-scheduler
+    - openstack-manila-share
+
+  - name: restart manila controller
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_manila_conf is changed
+    with_items:
+    - openstack-manila-api
+    - openstack-manila-scheduler
+    - openstack-manila-share
+
+  - block:
+    - name: check default share type
+      shell: manila type-list
+      changed_when: not (reg_default_type.stdout is search(' default '))
+      failed_when: false
+      register: reg_default_type
+
+    - name: create default share type
+      shell: manila type-create default True
+      when: reg_default_type is changed
+    environment: "{{ openstack.openrc.admin }}"

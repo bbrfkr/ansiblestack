@@ -1,0 +1,55 @@
+---
+- name: install glance
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: openstack-glance
+      state: installed
+
+  - name: put config file
+    template:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    register: reg_glance_config
+    with_items:
+    - src: glance-api.conf.j2
+      dest: /etc/glance/glance-api.conf
+    - src: glance-registry.conf.j2
+      dest: /etc/glance/glance-registry.conf
+    - src: glance-swift.conf.j2
+      dest: /etc/glance/glance-swift.conf
+
+  - name: check glance database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      glance
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_glance'))
+    failed_when: false
+    register: reg_deployed_database
+
+  - name: deploy glance database
+    shell: su -s /bin/sh -c "glance-manage db_sync" glance
+    when: reg_deployed_database is changed
+
+  - name: start and enable glance
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - openstack-glance-api
+    - openstack-glance-registry
+
+  - name: restart glance
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: reg_glance_config is changed
+    with_items:
+    - openstack-glance-api
+    - openstack-glance-registry
+

@@ -1,0 +1,140 @@
+---
+- name: create databases
+  hosts: controllers
+  tasks:
+  - name: install MySQL-python to use mysql module
+    yum:
+      name: MySQL-python 
+      state: installed
+  
+  - name: create db 
+    mysql_db:
+      name: "{{ item }}"
+      login_user: root
+      login_password: "{{ openstack.mariadb.root_db_pass }}"
+      login_host: localhost
+      state: present
+    with_items:
+    - keystone
+    - glance
+    - nova_api
+    - nova
+    - nova_cell0
+    - placement
+    - neutron
+    - cinder 
+    - heat
+    - designate
+    - manila
+    - trove
+    - barbican 
+    - magnum
+  
+  - name: create db user
+    mysql_user:
+      name: "{{ item.user_name }}" 
+      host: "{{ item.allowed_host }}"
+      password: "{{ item.password }}"
+      priv: "{{ item.priv }}"
+      login_user: root
+      login_password: "{{ openstack.mariadb.root_db_pass }}"
+      login_host: localhost
+      state: present
+    with_items:
+    - allowed_host: localhost
+      user_name: keystone
+      priv: "keystone.*:ALL"
+      password: "{{ openstack.keystone.db_pass }}"
+    - allowed_host: "%"
+      user_name: keystone
+      priv: "keystone.*:ALL"
+      password: "{{ openstack.keystone.db_pass }}"
+    - allowed_host: localhost
+      user_name: glance
+      priv: "glance.*:ALL"
+      password: "{{ openstack.glance.db_pass }}"
+    - allowed_host: "%"
+      user_name: glance
+      priv: "glance.*:ALL"
+      password: "{{ openstack.glance.db_pass }}"
+    - allowed_host: localhost
+      user_name: nova 
+      priv: "nova_api.*:ALL/nova.*:ALL/nova_cell0.*:ALL"
+      password: "{{ openstack.nova.db_pass }}"
+    - allowed_host: "%"
+      user_name: nova
+      priv: "nova_api.*:ALL/nova.*:ALL/nova_cell0.*:ALL"
+      password: "{{ openstack.nova.db_pass }}"
+    - allowed_host: localhost
+      user_name: placement
+      priv: "placement.*:ALL"
+      password: "{{ openstack.placement.db_pass }}"
+    - allowed_host: "%"
+      user_name: placement
+      priv: "placement.*:ALL"
+      password: "{{ openstack.placement.db_pass }}"
+    - allowed_host: localhost
+      user_name: neutron
+      priv: "neutron.*:ALL"
+      password: "{{ openstack.neutron.db_pass }}"
+    - allowed_host: "%"
+      user_name: neutron
+      priv: "neutron.*:ALL"
+      password: "{{ openstack.neutron.db_pass }}"
+    - allowed_host: localhost
+      user_name: cinder
+      priv: "cinder.*:ALL"
+      password: "{{ openstack.cinder.db_pass }}"
+    - allowed_host: "%"
+      user_name: cinder
+      priv: "cinder.*:ALL"
+      password: "{{ openstack.cinder.db_pass }}"
+    - allowed_host: localhost
+      user_name: heat
+      priv: "heat.*:ALL"
+      password: "{{ openstack.heat.db_pass }}"
+    - allowed_host: "%"
+      user_name: heat
+      priv: "heat.*:ALL"
+      password: "{{ openstack.heat.db_pass }}"
+    - allowed_host: localhost
+      user_name: designate
+      priv: "designate.*:ALL"
+      password: "{{ openstack.designate.db_pass }}"
+    - allowed_host: "%"
+      user_name: designate
+      priv: "designate.*:ALL"
+      password: "{{ openstack.designate.db_pass }}"
+    - allowed_host: localhost
+      user_name: manila
+      priv: "manila.*:ALL"
+      password: "{{ openstack.manila.db_pass }}"
+    - allowed_host: "%"
+      user_name: manila
+      priv: "manila.*:ALL"
+      password: "{{ openstack.manila.db_pass }}"
+    - allowed_host: localhost
+      user_name: trove
+      priv: "trove.*:ALL"
+      password: "{{ openstack.trove.db_pass }}"
+    - allowed_host: "%"
+      user_name: trove
+      priv: "trove.*:ALL"
+      password: "{{ openstack.trove.db_pass }}"
+    - allowed_host: localhost
+      user_name: barbican
+      priv: "barbican.*:ALL"
+      password: "{{ openstack.barbican.db_pass }}"
+    - allowed_host: "%"
+      user_name: barbican
+      priv: "barbican.*:ALL"
+      password: "{{ openstack.barbican.db_pass }}"
+    - allowed_host: localhost
+      user_name: magnum
+      priv: "magnum.*:ALL"
+      password: "{{ openstack.magnum.db_pass }}"
+    - allowed_host: "%"
+      user_name: magnum
+      priv: "magnum.*:ALL"
+      password: "{{ openstack.magnum.db_pass }}"
+

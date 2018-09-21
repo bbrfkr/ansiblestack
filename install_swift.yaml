@@ -1,0 +1,277 @@
+---
+- name: install swift for controller
+  hosts: controllers
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-swift-proxy
+    - python-swiftclient
+    - python-keystoneclient
+    - python-keystonemiddleware
+    - rsync
+
+  - name: put swift proxy config
+    template:
+      src: proxy-server.conf.j2
+      dest: /etc/swift/proxy-server.conf
+    register: reg_swift_proxy
+
+  - name: check account ring
+    stat:
+      path: /etc/swift/account.ring.gz
+    register: reg_account_ring
+
+  - block:
+    - name: create account.builder
+      shell: swift-ring-builder account.builder create 7 3 1
+      args:
+        chdir: /etc/swift
+
+    - name: add device to account ring
+      shell: >
+        swift-ring-builder account.builder
+        add --region 1 --zone 1 --ip {{ hostvars[item]['ansible_eth2']['ipv4']['address'] }} --port 6202
+        --device vdb --weight 100
+      args:
+        chdir: /etc/swift
+      with_items: "{{ groups['computes'] }}"
+
+    - name: rebalance account ring
+      shell: swift-ring-builder account.builder rebalance
+      args:
+        chdir: /etc/swift
+    when: not (reg_account_ring.stat.exists)
+
+  - name: check container ring
+    stat:
+      path: /etc/swift/container.ring.gz
+    register: reg_container_ring
+
+  - block:
+    - name: create container.builder
+      shell: swift-ring-builder container.builder create 7 3 1
+      args:
+        chdir: /etc/swift
+
+    - name: add device to container ring
+      shell: >
+        swift-ring-builder container.builder
+        add --region 1 --zone 1 --ip {{ hostvars[item]['ansible_eth2']['ipv4']['address'] }} --port 6201
+        --device vdb --weight 100
+      args:
+        chdir: /etc/swift
+      with_items: "{{ groups['computes'] }}"
+
+    - name: rebalance container ring
+      shell: swift-ring-builder container.builder rebalance
+      args:
+        chdir: /etc/swift
+    when: not (reg_container_ring.stat.exists)
+
+  - name: check object ring
+    stat:
+      path: /etc/swift/object.ring.gz
+    register: reg_object_ring
+
+  - block:
+    - name: create object.builder
+      shell: swift-ring-builder object.builder create 7 3 1
+      args:
+        chdir: /etc/swift
+
+    - name: add device to object ring
+      shell: >
+        swift-ring-builder object.builder
+        add --region 1 --zone 1 --ip {{ hostvars[item]['ansible_eth2']['ipv4']['address'] }} --port 6200
+        --device vdb --weight 100
+      args:
+        chdir: /etc/swift
+      with_items: "{{ groups['computes'] }}"
+
+    - name: rebalance object ring
+      shell: swift-ring-builder object.builder rebalance
+      args:
+        chdir: /etc/swift
+    when: not (reg_object_ring.stat.exists)
+
+  - name: put swift common config
+    template:
+      src: swift.conf.j2
+      dest: /etc/swift/swift.conf
+    register: reg_swift_common
+
+  - name: change ownership of swift configs
+    file:
+      path: /etc/swift
+      owner: root
+      group: swift
+      recurse: yes
+
+- name: install swift for compute
+  hosts: computes 
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - rsync
+    - openstack-swift-account
+    - openstack-swift-container
+    - openstack-swift-object
+
+  - name: put rsync config
+    template:
+      src: rsyncd.conf.j2
+      dest: /etc/rsyncd.conf
+    register: reg_rsync_config
+
+  - name: put rsync secrets
+    template:
+      src: rsyncd.secrets.j2
+      dest: /etc/rsyncd.secrets
+      mode: 0600
+    register: reg_rsync_secret
+
+  - name: start and enable rsyncd
+    service:
+      name: rsyncd
+      state: started
+      enabled: yes
+
+  - name: restart rsyncd
+    service:
+      name: rsyncd
+      state: restarted
+    when:
+    - reg_rsync_config is changed or
+      reg_rsync_secret is changed
+
+  - name: put swift storage config
+    template:
+      src: "{{ item.src }}" 
+      dest: "{{ item.dest }}"
+    register: reg_swift_compute
+    with_items:
+    - src: account-server.conf.j2
+      dest: /etc/swift/account-server.conf
+    - src: container-server.conf.j2
+      dest: /etc/swift/container-server.conf
+    - src: object-server.conf.j2
+      dest: /etc/swift/object-server.conf
+
+  - name: change ownership of disk mount dir
+    file:
+      path: "{{ item }}"
+      owner: swift
+      group: swift
+    with_items:
+    - /swift/devs
+    - /swift/devs/vdb
+
+  - name: create recon directory
+    file:
+      path: /var/cache/swift
+      owner: root
+      group: swift
+      mode: 0775
+      state: directory
+
+- name: distribute files to computes
+  hosts: computes
+  tasks:
+  - name: put swift common config
+    template:
+      src: swift.conf.j2
+      dest: /etc/swift/swift.conf
+    register: reg_swift_common
+
+  - name: distribute rings
+    synchronize:
+      src: "/etc/swift/{{ item }}"
+      dest: "rsync://{{ openstack.rsync.sync_user }}@{{ ansible_eth2.ipv4.address }}/etc-swift"
+    delegate_to: "{{ groups['controllers'][0] }}"
+    with_items:
+    - account.ring.gz
+    - container.ring.gz
+    - object.ring.gz
+    - account.builder
+    - container.builder
+    - object.builder
+    environment:
+      RSYNC_PASSWORD: "{{ openstack.rsync.sync_pass }}"
+
+  - name: change ownership of swift configs
+    file:
+      path: /etc/swift
+      owner: root
+      group: swift
+      recurse: yes
+
+- name: start and enable swift
+  hosts: all
+  tasks:
+  - name: start and enable swift for controllers
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    when: inventory_hostname in groups['controllers']
+    with_items:
+    - openstack-swift-proxy
+
+  - name: restart swift for controllers
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when:
+    - inventory_hostname in groups['controllers']
+    - reg_swift_proxy is changed or
+      reg_swift_common is changed
+    with_items:
+    - openstack-swift-proxy
+
+  - name: start and enable swift for computes
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    when: inventory_hostname in groups['computes']
+    with_items:
+    - openstack-swift-account
+    - openstack-swift-account-auditor
+    - openstack-swift-account-reaper
+    - openstack-swift-account-replicator 
+    - openstack-swift-container
+    - openstack-swift-container-auditor
+    - openstack-swift-container-replicator
+    - openstack-swift-container-updater
+    - openstack-swift-object
+    - openstack-swift-object-auditor
+    - openstack-swift-object-replicator
+    - openstack-swift-object-updater
+
+  - name: restart swift for computes
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when:
+    - inventory_hostname in groups['computes']
+    - reg_swift_compute is changed or
+      reg_swift_common is changed
+    with_items:
+    - openstack-swift-account
+    - openstack-swift-account-auditor
+    - openstack-swift-account-reaper
+    - openstack-swift-account-replicator
+    - openstack-swift-container
+    - openstack-swift-container-auditor
+    - openstack-swift-container-replicator
+    - openstack-swift-container-updater
+    - openstack-swift-object
+    - openstack-swift-object-auditor
+    - openstack-swift-object-replicator
+    - openstack-swift-object-updater

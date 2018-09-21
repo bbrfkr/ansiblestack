@@ -1,0 +1,53 @@
+openstack:
+  exec_yum_update: yes
+  mariadb:
+    root_db_pass: password
+  rabbitmq:
+    user_pass: password
+  keystone:
+    db_pass: password
+  swift:
+    db_pass: password
+    user_pass: password
+    hash_path_suffix: password
+    hash_path_prefix: password
+  rsync:
+    sync_user: rsync_admin 
+    sync_pass: password
+  glance:
+    db_pass: password
+    user_pass: password
+  nova:
+    db_pass: password
+    user_pass: password
+  placement:
+    db_pass: password
+    user_pass: password
+  neutron:
+    db_pass: password
+    user_pass: password
+    metadata_secret: password
+    dns_forwarders: 192.168.1.3
+    dns_domain: openstack.local.
+  cinder:
+    db_pass: password
+    user_pass: password
+  heat:
+    db_pass: password
+    user_pass: password
+    domain_admin_pass: password
+  designate:
+    db_pass: password
+    user_pass: password
+    dns_server_ip: 192.168.0.1
+    dns_server_host: dns.example.com
+  openrc:
+    admin:
+      OS_USERNAME: admin
+      OS_PASSWORD: password
+      OS_PROJECT_NAME: admin
+      OS_PROJECT_DOMAIN_NAME: default
+      OS_USER_DOMAIN_NAME: default
+      OS_AUTH_URL: "http://controller.example.com:5000/v3"
+      OS_IDENTITY_API_VERSION: 3
+      OS_REGION_NAME: RegionOne

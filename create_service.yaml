@@ -1,0 +1,317 @@
+---
+- name: create services of openstack
+  hosts: controllers
+  tasks:
+  - block:
+    - name: create special domain
+      os_keystone_domain:
+        name: "{{ item.name }}"
+        description: "{{ item.desc }}"
+        state: present
+      with_items:
+      - name: heat
+        desc: "Stack projects and users"
+      - name: magnum
+        desc: "Owns users and projects created by magnum"
+
+    - name: create service users
+      os_user:
+        name: "{{ item.name }}"
+        password: "{{ item.password }}"
+        domain: "{{ item.domain }}"
+        update_password: on_create
+        state: present
+      with_items:
+      - name: swift
+        password: "{{ openstack.swift.user_pass }}"
+        domain: default
+      - name: glance
+        password: "{{ openstack.glance.user_pass }}"
+        domain: default
+      - name: nova 
+        password: "{{ openstack.nova.user_pass }}"
+        domain: default
+      - name: placement 
+        password: "{{ openstack.placement.user_pass }}"
+        domain: default
+      - name: neutron 
+        password: "{{ openstack.neutron.user_pass }}"
+        domain: default
+      - name: cinder 
+        password: "{{ openstack.cinder.user_pass }}"
+        domain: default
+      - name: heat 
+        password: "{{ openstack.heat.user_pass }}"
+        domain: default
+      - name: heat_domain_admin
+        password: "{{ openstack.heat.domain_admin_pass }}"
+        domain: heat
+      - name: designate
+        password: "{{ openstack.designate.user_pass }}"
+        domain: default 
+      - name: manila
+        password: "{{ openstack.manila.user_pass }}"
+        domain: default 
+      - name: trove
+        password: "{{ openstack.trove.user_pass }}"
+        domain: default 
+      - name: barbican
+        password: "{{ openstack.barbican.user_pass }}"
+        domain: default 
+      - name: magnum
+        password: "{{ openstack.magnum.user_pass }}"
+        domain: default 
+      - name: magnum_domain_admin
+        password: "{{ openstack.magnum.domain_admin_pass }}"
+        domain: magnum
+
+    - name: add admin role to service users
+      os_user_role:
+        user: "{{ item }}"
+        role: admin
+        project: service
+        state: present
+      with_items:
+      - swift
+      - glance
+      - nova
+      - placement
+      - neutron
+      - cinder 
+      - heat 
+      - designate 
+      - manila
+      - trove
+      - barbican 
+      - magnum
+
+    - name: get id of heat domain
+      os_keystone_domain_facts:
+        name: heat
+
+    - name: add admin role to heat_domain_admin
+      os_user_role:
+        user: heat_domain_admin
+        role: admin
+        domain: "{{ openstack_domains.0.id }}"
+        state: present
+
+    - name: get id of magnum domain
+      os_keystone_domain_facts:
+        name: magnum
+
+    - name: add admin role to heat_domain_admin
+      os_user_role:
+        user: magnum_domain_admin
+        role: admin
+        domain: "{{ openstack_domains.0.id }}"
+        state: present
+
+    - name: create role for services
+      os_keystone_role:
+        name: "{{ item }}"
+        state: present
+      with_items:
+      - heat_stack_owner
+      - heat_stack_user
+      - creator
+
+    - name: add creator role to barbican user
+      os_user_role:
+        user: barbican
+        role: creator
+        project: service
+        state: present
+ 
+    - name: create services
+      os_keystone_service:
+        name: "{{ item.name }}"
+        service_type: "{{ item.type }}"
+        description: "{{ item.desc }}"
+        state: present
+      with_items:
+      - name: swift
+        type: object-store
+        desc: "OpenStack Object Storage"
+      - name: glance
+        type: image
+        desc: "OpenStack Image"
+      - name: nova 
+        type: compute
+        desc: "OpenStack Compute"
+      - name: placement 
+        type: placement 
+        desc: "Placement API"
+      - name: neutron 
+        type: network 
+        desc: "OpenStack Networking"
+      - name: cinderv2 
+        type: volumev2 
+        desc: "OpenStack Block Storage"
+      - name: cinderv3 
+        type: volumev3 
+        desc: "OpenStack Block Storage"
+      - name: heat 
+        type: orchestration
+        desc: "Orchestration"
+      - name: heat-cfn
+        type: cloudformation
+        desc: "Orchestration"
+      - name: designate
+        type: dns
+        desc: "DNS"
+      - name: manila
+        type: share 
+        desc: "OpenStack Shared File Systems"
+      - name: manilav2 
+        type: sharev2 
+        desc: "OpenStack Shared File Systems V2"
+      - name: trove
+        type: database 
+        desc: "Database"
+      - name: barbican
+        type: key-manager
+        desc: "Key Manager"
+      - name: magnum
+        type: container-infra 
+        desc: "OpenStack Container Infrastructure Management Service"
+
+    - name: create endpoints
+      os_keystone_endpoint:
+        service: "{{ item.service }}"
+        endpoint_interface: "{{ item.endpoint_if }}"
+        url: "{{ item.url }}"
+        region: "{{ openstack.openrc.admin.OS_REGION_NAME }}"
+        state: present
+      with_items:
+      - service: swift
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8080/v1/AUTH_%(project_id)s"
+      - service: swift
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8080/v1/AUTH_%(project_id)s"
+      - service: swift
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8080/v1"
+      - service: glance
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9292"
+      - service: glance
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9292"
+      - service: glance
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9292"
+      - service: nova
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8774/v2.1"
+      - service: nova
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8774/v2.1"
+      - service: nova
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8774/v2.1"
+      - service: placement
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8778"
+      - service: placement
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8778"
+      - service: placement
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8778"
+      - service: neutron
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9696"
+      - service: neutron
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9696"
+      - service: neutron
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9696"
+      - service: cinderv2
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8776/v2/%(project_id)s"
+      - service: cinderv2
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8776/v2/%(project_id)s"
+      - service: cinderv2
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8776/v2/%(project_id)s"
+      - service: cinderv3
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8776/v3/%(project_id)s"
+      - service: cinderv3
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8776/v3/%(project_id)s"
+      - service: cinderv3
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8776/v3/%(project_id)s"
+      - service: heat
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8004/v1/%(tenant_id)s"
+      - service: heat
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8004/v1/%(tenant_id)s"
+      - service: heat
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8004/v1/%(tenant_id)s"
+      - service: heat-cfn
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8000/v1"
+      - service: heat-cfn
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8000/v1"
+      - service: heat-cfn
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8000/v1"
+      - service: designate
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9001/"
+      - service: manila
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8786/v1/%(tenant_id)s"
+      - service: manila
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8786/v1/%(tenant_id)s"
+      - service: manila
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8786/v1/%(tenant_id)s"
+      - service: manilav2
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8786/v2/%(tenant_id)s"
+      - service: manilav2
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8786/v2/%(tenant_id)s"
+      - service: manilav2
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8786/v2/%(tenant_id)s"
+      - service: trove
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8779/v1.0/%(tenant_id)s"
+      - service: trove
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8779/v1.0/%(tenant_id)s"
+      - service: trove
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:8779/v1.0/%(tenant_id)s"
+      - service: barbican
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9311"
+      - service: barbican
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9311"
+      - service: barbican
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9311"
+      - service: magnum
+        endpoint_if: public
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9511/v1"
+      - service: magnum
+        endpoint_if: internal
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9511/v1"
+      - service: magnum
+        endpoint_if: admin
+        url: "http://{{ hostvars[groups['controllers'][0]]['ansible_nodename'] }}:9511/v1"
+    connection: local
+    environment: "{{ openstack.openrc.admin }}"

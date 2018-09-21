@@ -1,0 +1,105 @@
+---
+- name: install cinder
+  hosts: controllers 
+  tasks:
+  - name: install packages
+    yum:
+      name: "{{ item }}"
+      state: installed
+    with_items:
+    - openstack-cinder
+
+  - name: put cinder config
+    template:
+      src: cinder.conf.j2
+      dest: /etc/cinder/cinder.conf
+    register: reg_cinder_config
+
+  - name: put share file for ssd backend
+    template:
+      src: ssd_shares.conf.j2
+      dest: /etc/cinder/ssd_shares.conf
+    register: reg_ssd_share
+
+  - name: check cinder database is deployed
+    shell: >
+      mysql
+      -uroot
+      -p{{ openstack.mariadb.root_db_pass }}
+      -e "show tables;"
+      cinder
+    changed_when: not (reg_deployed_database.stdout is search('Tables_in_cinder'))
+    failed_when: false
+    register: reg_deployed_database
+    delegate_to: "{{ groups['controllers'][0] }}"
+
+  - name: deploy cinder database
+    shell: su -s /bin/sh -c "cinder-manage db sync" cinder
+    when: reg_deployed_database is changed
+
+  - name: start and enable cinder
+    service:
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+    - openstack-cinder-api
+    - openstack-cinder-scheduler
+    - openstack-cinder-volume
+    - openstack-cinder-backup
+
+  - name: restart cinder
+    service:
+      name: "{{ item }}"
+      state: restarted
+    when: 
+    - reg_cinder_config is changed
+    - reg_ssd_share is changed
+    with_items:
+    - openstack-cinder-api
+    - openstack-cinder-scheduler
+    - openstack-cinder-volume
+    - openstack-cinder-backup
+
+  - block:
+    - name: check ssd volume type
+      shell: cinder type-list
+      changed_when: not (reg_vol_type.stdout is search('ssd'))
+      failed_when: false
+      register: reg_vol_type
+
+    - name: create ssd volume type
+      shell: cinder type-create ssd
+      when: reg_vol_type is changed
+
+    - name: check backend of ssd volume type
+      shell: cinder extra-specs-list
+      changed_when: not (reg_backend_ssd.stdout is search('SSD'))
+      failed_when: false
+      register: reg_backend_ssd
+
+    - name: set backend of ssd volume type
+      shell: cinder type-key ssd set volume_backend_name=SSD
+      when: reg_backend_ssd is changed
+
+    - name: check vhdd volume type
+      shell: cinder type-list
+      changed_when: not (reg_vol_type.stdout is search('vhdd'))
+      failed_when: false
+      register: reg_vol_type
+
+    - name: create vhdd volume type
+      shell: cinder type-create vhdd
+      when: reg_vol_type is changed
+
+    - name: check backend of vhdd volume type
+      shell: cinder extra-specs-list
+      changed_when: not (reg_backend_vhdd.stdout is search('VHDD'))
+      failed_when: false
+      register: reg_backend_vhdd
+
+    - name: set backend of vhdd volume type
+      shell: cinder type-key vhdd set volume_backend_name=VHDD
+      when: reg_backend_vhdd is changed
+    environment: "{{ openstack.openrc.admin }}"
+    
